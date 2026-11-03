@@ -1,14 +1,20 @@
+import json
 import logging
 import os
+from datetime import datetime, timezone
 
 import azure.functions as func
 import pyodbc
+from azure.core.exceptions import AzureError
+from azure.storage.blob import BlobServiceClient
+
+FONTE = "itsm"
 
 app = func.FunctionApp()
 
 
 @app.timer_trigger(
-    schedule="0 * * * * *", arg_name="myTimer", run_on_startup=False, use_monitor=False
+    schedule="0 0 * * * *", arg_name="myTimer", run_on_startup=False, use_monitor=False
 )
 def extract_todas_tabelas(myTimer: func.TimerRequest) -> None:
 
@@ -52,6 +58,12 @@ def extract_todas_tabelas(myTimer: func.TimerRequest) -> None:
 
         logging.info("Quantidade de tabelas encontradas: %d", len(tabelas))
 
+        agora = datetime.now(timezone.utc)
+        blob_service = BlobServiceClient.from_connection_string(
+            os.getenv("AzureWebJobsStorage")
+        )
+        container = blob_service.get_container_client("bronze")
+
         for schema, tabela in tabelas:
 
             logging.info("========================================")
@@ -75,15 +87,26 @@ def extract_todas_tabelas(myTimer: func.TimerRequest) -> None:
 
                 logging.info("Colunas: %s", columns)
 
-                for row in rows:
-                    logging.info("%s", dict(zip(columns, row)))
+                dados = [dict(zip(columns, row)) for row in rows]
+                entidade = tabela.lower()
+                caminho = (
+                    f"{FONTE}/{entidade}/"
+                    f"ano={agora:%Y}/mes={agora:%m}/dia={agora:%d}/"
+                    f"{entidade}_{agora:%Y%m%dT%H%M%SZ}.json"
+                )
+                container.upload_blob(
+                    name=caminho,
+                    data=json.dumps(dados, default=str, ensure_ascii=False),
+                    overwrite=True,
+                )
+                logging.info("Gravado bronze/%s (%d registros)", caminho, len(dados))
 
-            except pyodbc.Error as e:
+            except (pyodbc.Error, AzureError) as e:
                 logging.error("Erro ao acessar %s.%s: %s", schema, tabela, e)
 
         cursor.close()
 
-    except pyodbc.Error as e:
+    except (pyodbc.Error, AzureError) as e:
         logging.error("Erro ao acessar o banco de dados: %s", e)
 
     except Exception as e:
