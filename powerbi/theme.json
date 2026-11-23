@@ -1,0 +1,7 @@
+{
+  "name": "ITSM - Azul",
+  "dataColors": ["#1261A0", "#00A6A6", "#F2A900", "#E4572E", "#6C63FF", "#5B8E7D", "#8D99AE", "#D1495B"],
+  "background": "#F5F7FA",
+  "foreground": "#172B4D",
+  "tableAccent": "#1261A0"
+}
